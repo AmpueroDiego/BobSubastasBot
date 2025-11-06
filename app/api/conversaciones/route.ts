@@ -1,183 +1,101 @@
-// app/api/conversaciones/route.ts
+// app/api/conversaciones/clientes/route.ts
 import { NextResponse } from 'next/server';
 import { query } from '@/app/lib/db';
-import { getIdNegocio } from '@/app/lib/get-id-negocio';
 
 // ==========================================
-// GET - Obtener mensajes de un cliente
+// GET - Clientes ordenados por ultimo_mensaje
 // ==========================================
 
 export async function GET(request: Request) {
   try {
-    const idNegocio = await getIdNegocio();
-    const { searchParams } = new URL(request.url);
-    const numero = searchParams.get('sessionId');
-    const checkOnly = searchParams.get('checkOnly') === 'true';
-    const lastMessageId = searchParams.get('lastMessageId');
+    console.log('📞 GET /api/conversaciones/clientes - Ordenados por ultimo_mensaje');
 
-    if (!numero) {
-      return NextResponse.json(
-        { error: 'sessionId es requerido' },
-        { status: 400 }
-      );
-    }
+    // Query simplificada - traer clientes ordenados por ultimo_mensaje
+    const result = await query(`
+      SELECT 
+        c.id,
+        c.nombre_apellido as nombre,
+        c.telefono as numero,
+        c.push_name as alias,
+        c.ultimo_mensaje,
+        c.estado as activo,
+        -- Último mensaje del historial de chat
+        ch.message->>'content' as ultimo_mensaje_contenido,
+        ch.message->>'type' as ultimo_mensaje_tipo,
+        -- Contar mensajes sin leer (human sin respuesta ai)
+        (
+          SELECT COUNT(*)::integer
+          FROM n8n_chat_histories ch2
+          WHERE ch2.session_id = c.telefono
+            AND ch2.message->>'type' = 'human'
+            AND ch2.id > COALESCE((
+              SELECT MAX(id)
+              FROM n8n_chat_histories
+              WHERE session_id = c.telefono
+                AND message->>'type' = 'ai'
+            ), 0)
+        ) as mensajes_sin_leer
+      
+      FROM cliente c
+      
+      -- Último mensaje del historial
+      LEFT JOIN LATERAL (
+        SELECT message
+        FROM n8n_chat_histories
+        WHERE session_id = c.telefono
+        ORDER BY id DESC
+        LIMIT 1
+      ) ch ON true
+      
+      WHERE c.telefono IS NOT NULL
+        AND c.telefono != ''
+      ORDER BY 
+        c.ultimo_mensaje DESC NULLS LAST,
+        c.id DESC
+      LIMIT 100
+    `);
 
-    // Verificar que el cliente pertenece al negocio
-    const clienteCheck = await query(
-      `SELECT id, nombre, apellido, activo 
-       FROM clientes 
-       WHERE numero = $1 AND id_negocio = $2`,
-      [numero, idNegocio]
-    );
-
-    if (clienteCheck.rows.length === 0) {
-      return NextResponse.json(
-        { error: 'Cliente no encontrado o no pertenece a este negocio' },
-        { status: 404 }
-      );
-    }
-
-    const sessionId = `${numero}_${idNegocio}`;
-
-    // Si solo queremos verificar si hay mensajes nuevos
-    if (checkOnly && lastMessageId) {
-      const countResult = await query(
-        `SELECT COUNT(*) as nuevos, MAX(id) as ultimo_id
-         FROM n8n_chat_histories
-         WHERE session_id = $1 AND id > $2`,
-        [sessionId, lastMessageId]
-      );
-
-      return NextResponse.json({
-        hayNuevos: parseInt(countResult.rows[0].nuevos) > 0,
-        ultimoId: countResult.rows[0].ultimo_id,
-        cantidadNuevos: parseInt(countResult.rows[0].nuevos)
+    console.log('✅ Clientes encontrados:', result.rows.length);
+    
+    // Log de los primeros 3 para debug
+    if (result.rows.length > 0) {
+      console.log('📋 Primeros 3 clientes:');
+      result.rows.slice(0, 3).forEach((row: any, idx: number) => {
+        console.log(`  ${idx + 1}. ${row.nombre} (${row.numero}) - último_mensaje: ${row.ultimo_mensaje}`);
       });
     }
 
-    // Obtener los últimos 50 mensajes
-    const mensajesResult = await query(
-      `SELECT 
-         id,
-         session_id,
-         message
-       FROM n8n_chat_histories
-       WHERE session_id = $1
-       ORDER BY id DESC
-       LIMIT 50`,
-      [sessionId]
-    );
+    // Formatear respuesta
+    const clientesFormateados = result.rows.map((row: any) => ({
+      id: row.id,
+      nombre: row.nombre,
+      apellido: null,
+      alias: row.alias,
+      edad: null,
+      numero: row.numero,
+      primer_mensaje: null,
+      ultimo_mensaje: row.ultimo_mensaje, // Este es el TIMESTAMP de la tabla cliente
+      activo: row.activo === 'activo' || row.activo === true,
+      id_negocio: null,
+      ultimo_mensaje_contenido: row.ultimo_mensaje_contenido,
+      ultimo_mensaje_tipo: row.ultimo_mensaje_tipo,
+      mensajes_sin_leer: row.mensajes_sin_leer || 0
+    }));
 
-    const mensajes = mensajesResult.rows.reverse();
-
-    return NextResponse.json({
-      cliente: clienteCheck.rows[0],
-      mensajes: mensajes,
-      total: mensajes.length,
-      ultimoId: mensajes.length > 0 ? mensajes[mensajes.length - 1].id : null
+    return NextResponse.json(clientesFormateados, {
+      headers: {
+        'Cache-Control': 'no-store, must-revalidate',
+        'Pragma': 'no-cache',
+      },
     });
   } catch (error) {
-    console.error('Error al obtener mensajes:', error);
+    console.error('[API] Error en GET /api/conversaciones/clientes:', error);
+    
     return NextResponse.json(
-      { error: 'Error al obtener mensajes' },
-      { status: 500 }
-    );
-  }
-}
-
-// ==========================================
-// POST - Enviar nuevo mensaje
-// ==========================================
-
-export async function POST(request: Request) {
-  try {
-    const idNegocio = await getIdNegocio();
-    const { sessionId, mensaje, tipo } = await request.json();
-
-    if (!sessionId || !mensaje) {
-      return NextResponse.json(
-        { error: 'sessionId y mensaje son obligatorios' },
-        { status: 400 }
-      );
-    }
-
-    // Verificar que el cliente pertenece al negocio
-    const clienteCheck = await query(
-      `SELECT id FROM clientes WHERE numero = $1 AND id_negocio = $2`,
-      [sessionId, idNegocio]
-    );
-
-    if (clienteCheck.rows.length === 0) {
-      return NextResponse.json(
-        { error: 'Cliente no encontrado o no pertenece a este negocio' },
-        { status: 404 }
-      );
-    }
-
-    const fullSessionId = `${sessionId}_${idNegocio}`;
-
-    // Guardar mensaje en el historial
-    const mensajeResult = await query(
-      `INSERT INTO n8n_chat_histories (session_id, message)
-       VALUES ($1, $2)
-       RETURNING id, session_id, message`,
-      [fullSessionId, JSON.stringify({
-        type: tipo || 'ai',
-        content: mensaje,
-        additional_kwargs: {},
-        response_metadata: {
-          timestamp: new Date().toISOString()
-        }
-      })]
-    );
-
-    // Actualizar último mensaje del cliente
-    await query(
-      `UPDATE clientes 
-       SET ultimo_mensaje = NOW()
-       WHERE numero = $1 AND id_negocio = $2`,
-      [sessionId, idNegocio]
-    );
-
-    return NextResponse.json(mensajeResult.rows[0], { status: 201 });
-  } catch (error) {
-    console.error('Error al enviar mensaje:', error);
-    return NextResponse.json(
-      { error: 'Error al enviar mensaje' },
-      { status: 500 }
-    );
-  }
-}
-
-// ==========================================
-// DELETE - Eliminar conversación completa
-// ==========================================
-
-export async function DELETE(request: Request) {
-  try {
-    const idNegocio = await getIdNegocio();
-    const { searchParams } = new URL(request.url);
-    const sessionId = searchParams.get('sessionId');
-
-    if (!sessionId) {
-      return NextResponse.json(
-        { error: 'sessionId es requerido' },
-        { status: 400 }
-      );
-    }
-
-    const fullSessionId = `${sessionId}_${idNegocio}`;
-
-    await query(
-      'DELETE FROM n8n_chat_histories WHERE session_id = $1',
-      [fullSessionId]
-    );
-
-    return NextResponse.json({ message: 'Conversación eliminada' });
-  } catch (error) {
-    console.error('Error al eliminar conversación:', error);
-    return NextResponse.json(
-      { error: 'Error al eliminar conversación' },
+      {
+        error: 'Error al obtener clientes',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }

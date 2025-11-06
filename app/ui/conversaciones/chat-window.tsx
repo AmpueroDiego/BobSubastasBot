@@ -1,8 +1,9 @@
+// app/ui/conversaciones/chat-window.tsx
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
 import { getNombreAMostrar } from '@/app/lib/utils';
-import { ArrowPathIcon, PowerIcon } from '@heroicons/react/24/outline';
+import { ArrowPathIcon, PowerIcon, PaperAirplaneIcon } from '@heroicons/react/24/outline';
 
 interface Mensaje {
   id: string | number;
@@ -25,7 +26,6 @@ interface Props {
   clientes: Cliente[];
 }
 
-// Función para formatear número - mostrar solo 9 dígitos
 function formatearNumeroParaMostrar(numero: string | null): string {
   if (!numero) return '';
   
@@ -83,9 +83,11 @@ function formatearHora(timestamp?: number): string {
 export default function ChatWindow({ clienteNumero, clientes }: Props) {
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
   const [cargando, setCargando] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [cambiandoEstado, setCambiandoEstado] = useState(false);
+  const [nuevoMensaje, setNuevoMensaje] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const cliente = clientes.find(c => c.numero === clienteNumero);
 
@@ -133,40 +135,53 @@ export default function ChatWindow({ clienteNumero, clientes }: Props) {
     setTimeout(() => setRefreshing(false), 500);
   };
 
-  // Toggle estado del bot
   const toggleEstadoBot = async () => {
     if (!cliente) return;
-
+    
+    setCambiandoEstado(true);
     try {
-      setCambiandoEstado(true);
-      
-      const response = await fetch(`/api/clientes/${cliente.id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          activo: !cliente.activo,
-        }),
+      const response = await fetch('/api/clientes/toggle-activo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: cliente.id })
       });
 
-      if (!response.ok) {
-        throw new Error('Error al cambiar estado del bot');
+      if (response.ok) {
+        await cargarMensajes(false);
+        window.location.reload();
       }
-
-      // Actualizar el estado del cliente en la lista
-      const clienteActualizado = clientes.find(c => c.id === cliente.id);
-      if (clienteActualizado) {
-        clienteActualizado.activo = !cliente.activo;
-      }
-
-      // Recargar la página para reflejar el cambio
-      window.location.reload();
     } catch (error) {
-      console.error('Error al cambiar estado del bot:', error);
-      alert('Error al cambiar estado del bot');
+      console.error('Error al cambiar estado:', error);
     } finally {
       setCambiandoEstado(false);
+    }
+  };
+
+  const enviarMensaje = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!nuevoMensaje.trim() || !clienteNumero || enviando) return;
+
+    setEnviando(true);
+    try {
+      const response = await fetch('/api/conversaciones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: clienteNumero,
+          mensaje: nuevoMensaje.trim(),
+          tipo: 'ai'
+        })
+      });
+
+      if (response.ok) {
+        setNuevoMensaje('');
+        await cargarMensajes(false);
+      }
+    } catch (error) {
+      console.error('Error al enviar mensaje:', error);
+    } finally {
+      setEnviando(false);
     }
   };
 
@@ -177,7 +192,7 @@ export default function ChatWindow({ clienteNumero, clientes }: Props) {
   // Auto-refresh cada 10 segundos
   useEffect(() => {
     if (!clienteNumero) return;
-    
+
     const interval = setInterval(() => {
       if (!document.hidden) {
         cargarMensajes(false);
@@ -187,122 +202,127 @@ export default function ChatWindow({ clienteNumero, clientes }: Props) {
     return () => clearInterval(interval);
   }, [clienteNumero]);
 
+  // Vista vacía
   if (!clienteNumero) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-gray-50 p-4">
+      <div className="h-full flex flex-col items-center justify-center bg-gray-50 p-8">
         <div className="text-center">
-          <p className="text-gray-500 text-sm md:text-base">
-            Selecciona una conversación para comenzar
+          <div className="mb-4">
+            <svg className="w-24 h-24 text-gray-300 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+          </div>
+          <h3 className="text-xl font-semibold text-gray-700 mb-2">
+            Bienvenido a tus conversaciones
+          </h3>
+          <p className="text-gray-500">
+            Selecciona un cliente de la lista para ver la conversación
           </p>
         </div>
       </div>
     );
   }
 
+  // Loading
   if (cargando) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-gray-50">
+      <div className="h-full flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-          <p className="mt-4 text-gray-500">Cargando mensajes...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Cargando conversación...</p>
         </div>
       </div>
     );
   }
 
-  const nombreAMostrar = getNombreAMostrar(
-    cliente?.nombre || null,
-    cliente?.apellido || null,
-    cliente?.alias || null,
-    cliente?.numero || null
-  );
-
-  const numeroFormateado = formatearNumeroParaMostrar(cliente?.numero || null);
+  const nombreMostrar = cliente ? getNombreAMostrar(
+    cliente.nombre,
+    cliente.apellido,
+    cliente.alias,
+    cliente.numero
+  ) : 'Cliente';
+  const numeroMostrar = cliente ? formatearNumeroParaMostrar(cliente.numero) : '';
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-white">
-      {/* Header - Responsive con botón de bot */}
-      <div className="flex-shrink-0 border-b border-gray-200 bg-white px-4 md:px-6 py-3 md:py-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
-            <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-blue-500 text-white flex items-center justify-center font-semibold flex-shrink-0 text-sm md:text-base">
-              {nombreAMostrar.charAt(0).toUpperCase()}
-            </div>
-            <div className="min-w-0 flex-1">
-              <h2 className="font-semibold text-gray-900 truncate text-sm md:text-base">
-                {nombreAMostrar}
-              </h2>
-              <p className="text-xs md:text-sm text-gray-500 truncate">
-                {numeroFormateado}
-              </p>
-            </div>
+    <div className="h-full flex flex-col bg-gray-50">
+      {/* Header del chat */}
+      <div className="bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-semibold">
+            {nombreMostrar.charAt(0).toUpperCase()}
           </div>
-          
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {/* Botón activar/desactivar bot */}
-            {cliente && (
-              <button
-                onClick={toggleEstadoBot}
-                disabled={cambiandoEstado}
-                className={`flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1.5 md:py-2 rounded-lg transition-colors text-xs md:text-sm font-medium ${
-                  cliente.activo
-                    ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
-                title={cliente.activo ? 'Desactivar bot' : 'Activar bot'}
-              >
-                <PowerIcon className={`w-4 h-4 md:w-5 md:h-5 ${cambiandoEstado ? 'animate-pulse' : ''}`} />
-                <span className="hidden sm:inline">
-                  {cambiandoEstado ? 'Cambiando...' : cliente.activo ? 'Bot ON' : 'Bot OFF'}
-                </span>
-              </button>
-            )}
-            
-            {/* Botón refrescar */}
+          <div>
+            <h3 className="font-semibold text-gray-900">{nombreMostrar}</h3>
+            <p className="text-sm text-gray-500">+51 {numeroMostrar}</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* Botón de refrescar */}
+          <button
+            onClick={refrescarMensajes}
+            disabled={refreshing}
+            className={`p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all ${
+              refreshing ? 'animate-spin' : ''
+            }`}
+            title="Refrescar mensajes"
+          >
+            <ArrowPathIcon className="h-5 w-5" />
+          </button>
+
+          {/* Botón de estado del bot */}
+          {cliente && (
             <button
-              onClick={refrescarMensajes}
-              className="flex-shrink-0 p-1.5 md:p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Refrescar mensajes"
+              onClick={toggleEstadoBot}
+              disabled={cambiandoEstado}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg font-medium transition-all ${
+                cliente.activo
+                  ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                  : 'bg-red-100 text-red-700 hover:bg-red-200'
+              }`}
+              title={cliente.activo ? 'Desactivar bot' : 'Activar bot'}
             >
-              <ArrowPathIcon className={`h-4 w-4 md:h-5 md:w-5 text-gray-600 ${refreshing ? 'animate-spin' : ''}`} />
+              <PowerIcon className="h-4 w-4" />
+              <span className="text-sm">
+                {cambiandoEstado ? 'Cambiando...' : cliente.activo ? 'Bot ON' : 'Bot OFF'}
+              </span>
             </button>
-          </div>
+          )}
         </div>
       </div>
 
-      {/* Mensajes - Responsive */}
-      {/* IMPORTANTE: 'human' = cliente (izquierda), 'ai' = bot (derecha) */}
-      <div className="flex-1 overflow-y-auto p-3 md:p-6 space-y-3 md:space-y-4 bg-gray-50">
+      {/* Mensajes */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {mensajes.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
-            <p className="text-gray-500 text-sm md:text-base">No hay mensajes</p>
+          <div className="flex flex-col items-center justify-center h-full text-center">
+            <div className="text-gray-400 mb-2">
+              <svg className="w-16 h-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+            </div>
+            <p className="text-gray-600 font-medium">No hay mensajes aún</p>
+            <p className="text-gray-500 text-sm mt-1">
+              Envía un mensaje para comenzar la conversación
+            </p>
           </div>
         ) : (
           mensajes.map((mensaje) => (
             <div
               key={mensaje.id}
-              className={`flex ${
-                mensaje.type === 'human' 
-                  ? 'justify-start'  /* Cliente a la IZQUIERDA */
-                  : 'justify-end'    /* Bot a la DERECHA */
-              }`}
+              className={`flex ${mensaje.type === 'human' ? 'justify-start' : 'justify-end'}`}
             >
               <div
-                className={`max-w-[85%] md:max-w-[70%] rounded-2xl px-3 py-2 md:px-4 md:py-3 ${
+                className={`max-w-[70%] rounded-lg px-4 py-2 ${
                   mensaje.type === 'human'
-                    ? 'bg-white border border-gray-200 text-gray-900 rounded-bl-sm'  /* Cliente: blanco */
-                    : 'bg-blue-500 text-white rounded-br-sm'  /* Bot: azul */
+                    ? 'bg-white border border-gray-200 text-gray-900'
+                    : 'bg-blue-600 text-white'
                 }`}
               >
-                <p className="text-sm md:text-base break-words whitespace-pre-wrap">
-                  {mensaje.content}
-                </p>
+                <p className="whitespace-pre-wrap break-words">{mensaje.content}</p>
                 {mensaje.timestamp && (
-                  <p
-                    className={`text-xs mt-1 ${
-                      mensaje.type === 'human' ? 'text-gray-500' : 'text-blue-100'
-                    }`}
-                  >
+                  <p className={`text-xs mt-1 ${
+                    mensaje.type === 'human' ? 'text-gray-500' : 'text-blue-100'
+                  }`}>
                     {formatearHora(mensaje.timestamp)}
                   </p>
                 )}
@@ -313,11 +333,32 @@ export default function ChatWindow({ clienteNumero, clientes }: Props) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Footer info - Responsive */}
-      <div className="flex-shrink-0 border-t border-gray-200 px-4 md:px-6 py-2 md:py-3 bg-gray-50">
-        <p className="text-xs md:text-sm text-gray-500 text-center">
-          Esta es una conversación de solo lectura • {cliente?.activo ? '🟢 Bot activo' : '🔴 Bot inactivo'}
-        </p>
+      {/* Input de mensaje */}
+      <div className="bg-white border-t border-gray-200 p-4">
+        <form onSubmit={enviarMensaje} className="flex gap-2">
+          <input
+            type="text"
+            value={nuevoMensaje}
+            onChange={(e) => setNuevoMensaje(e.target.value)}
+            placeholder="Escribe un mensaje..."
+            disabled={enviando}
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+          />
+          <button
+            type="submit"
+            disabled={!nuevoMensaje.trim() || enviando}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+          >
+            {enviando ? (
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+            ) : (
+              <>
+                <PaperAirplaneIcon className="h-5 w-5" />
+                <span>Enviar</span>
+              </>
+            )}
+          </button>
+        </form>
       </div>
     </div>
   );

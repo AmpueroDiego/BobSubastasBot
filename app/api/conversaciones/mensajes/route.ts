@@ -1,19 +1,16 @@
 // app/api/conversaciones/mensajes/route.ts
 import { NextResponse } from 'next/server';
-import { queryWithRetry } from '@/app/lib/db';
-import { getIdNegocio } from '@/app/lib/get-id-negocio';
+import { query } from '@/app/lib/db';
 
 // ==========================================
-// GET - Obtener mensajes con paginación (SIN DUPLICADOS)
+// GET - Obtener mensajes SIN ID_NEGOCIO
 // ==========================================
 
 export async function GET(request: Request) {
   try {
-    const idNegocio = await getIdNegocio();
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get('sessionId');
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '50');
+    const limit = parseInt(searchParams.get('limit') || '200');
 
     if (!sessionId) {
       return NextResponse.json(
@@ -22,59 +19,76 @@ export async function GET(request: Request) {
       );
     }
 
-    // Verificar que el cliente pertenece al negocio
-    const clienteCheck = await queryWithRetry(
-      'SELECT id FROM clientes WHERE numero = $1 AND id_negocio = $2',
-      [sessionId, idNegocio]
+    console.log('🔍 Buscando mensajes para session_id:', sessionId);
+
+    // Verificar que el cliente existe (por teléfono)
+    const clienteCheck = await query(
+      'SELECT id, nombre_apellido FROM cliente WHERE telefono = $1',
+      [sessionId]
     );
 
     if (clienteCheck.rows.length === 0) {
+      console.log('⚠️ Cliente no encontrado con telefono:', sessionId);
       return NextResponse.json(
         { error: 'Cliente no encontrado' },
         { status: 404 }
       );
     }
 
-    const fullSessionId = `${sessionId}_${idNegocio}`;
-    const offset = (page - 1) * limit;
+    console.log('✅ Cliente encontrado:', clienteCheck.rows[0]);
 
-    // Query optimizada que ELIMINA DUPLICADOS usando DISTINCT ON
-    const result = await queryWithRetry(`
-      SELECT DISTINCT ON (id) 
+    // Traer mensajes directamente de n8n_chat_histories
+    // El session_id en la BD es simplemente el teléfono
+    const result = await query(`
+      SELECT 
         id,
         session_id,
         message,
-        message->>'type' as type,
-        message->>'content' as content,
-        EXTRACT(EPOCH FROM created_at)::bigint as timestamp
+        created_at
       FROM n8n_chat_histories
       WHERE session_id = $1
-      ORDER BY id DESC
+      ORDER BY id ASC
       LIMIT $2
-      OFFSET $3
-    `, [fullSessionId, limit, offset]);
+    `, [sessionId, limit]);
 
-    // Contar total de mensajes únicos
-    const countResult = await queryWithRetry(
-      'SELECT COUNT(DISTINCT id) as total FROM n8n_chat_histories WHERE session_id = $1',
-      [fullSessionId]
-    );
+    console.log('📦 Mensajes encontrados:', result.rows.length);
 
-    const total = parseInt(countResult.rows[0]?.total || '0');
-    const totalPages = Math.ceil(total / limit);
+    // Procesar mensajes
+    const mensajesProcesados = result.rows.map((row: any) => {
+      let messageData = row.message;
+      
+      // Si message es string, parsearlo
+      if (typeof messageData === 'string') {
+        try {
+          messageData = JSON.parse(messageData);
+        } catch (e) {
+          console.error('Error parseando mensaje ID', row.id, ':', e);
+          messageData = { type: 'ai', content: messageData };
+        }
+      }
 
-    // Invertir orden para mostrar cronológicamente
-    const mensajes = result.rows.reverse();
+      const tipo = messageData.type || messageData.data?.type || 'ai';
+      const contenido = messageData.content || messageData.data?.content || messageData.text || '';
+
+      return {
+        id: row.id,
+        session_id: row.session_id,
+        type: tipo,
+        content: contenido,
+        timestamp: row.created_at ? Math.floor(new Date(row.created_at).getTime() / 1000) : null
+      };
+    });
+
+    console.log('✅ Mensajes procesados:', mensajesProcesados.length);
+    if (mensajesProcesados.length > 0) {
+      console.log('📋 Primer mensaje:', mensajesProcesados[0]);
+      console.log('📋 Último mensaje:', mensajesProcesados[mensajesProcesados.length - 1]);
+    }
 
     return NextResponse.json({
-      data: mensajes,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
-        hasMore: page < totalPages
-      }
+      data: mensajesProcesados,
+      total: mensajesProcesados.length,
+      session_id: sessionId
     }, {
       headers: {
         'Cache-Control': 'no-store, must-revalidate',
