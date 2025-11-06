@@ -1,22 +1,7 @@
+// app/api/conversaciones/mensajes/route.ts
 import { NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { queryWithRetry } from '@/app/lib/db';
-
-// ==========================================
-// HELPER: Obtener ID del negocio
-// ==========================================
-
-async function getIdNegocio(): Promise<number> {
-  const session = await auth();
-  // @ts-ignore
-  const idNegocio = session?.user?.id_negocio;
-
-  if (!idNegocio) {
-    throw new Error('No se pudo obtener el id_negocio de la sesión');
-  }
-
-  return idNegocio;
-}
+import { getIdNegocio } from '@/app/lib/get-id-negocio';
 
 // ==========================================
 // GET - Obtener mensajes con paginación (SIN DUPLICADOS)
@@ -106,11 +91,3 @@ export async function GET(request: Request) {
     );
   }
 }
-
-// ==========================================
-// Configuración de ruta
-// ==========================================
-
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-export const maxDuration = 30;

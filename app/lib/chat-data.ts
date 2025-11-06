@@ -1,3 +1,4 @@
+// app/lib/chat-data.ts
 import { query } from './db';
 import { auth } from '@/auth';
 
@@ -27,12 +28,13 @@ export interface Mensaje {
   response_metadata?: any;
   tool_calls?: any[];
   invalid_tool_calls?: any[];
+  created_at?: string;
 }
 
 export interface ClienteConUltimoMensaje extends Cliente {
-  ultimo_mensaje_contenido: string | null;
-  ultimo_mensaje_tipo: 'human' | 'ai' | null;
-  mensajes_sin_leer: number;
+  ultimo_mensaje_contenido?: string | null;
+  ultimo_mensaje_tipo?: 'human' | 'ai' | null;
+  mensajes_sin_leer?: number;
 }
 
 // ==========================================
@@ -55,7 +57,7 @@ async function getIdNegocio(): Promise<number> {
 // CLIENTES CON CHATS - OPTIMIZADO CON LATERAL JOIN
 // ==========================================
 
-export async function fetchClientesConChats() {
+export async function fetchClientesConChats(): Promise<ClienteConUltimoMensaje[]> {
   const idNegocio = await getIdNegocio();
 
   try {
@@ -137,7 +139,10 @@ export async function fetchMensajesCliente(sessionId: string): Promise<Mensaje[]
     const fullSessionId = `${sessionId}_${idNegocio}`;
 
     const result = await query(
-      `SELECT id, session_id, message FROM n8n_chat_histories WHERE session_id = $1 ORDER BY id ASC`,
+      `SELECT id, session_id, message 
+       FROM n8n_chat_histories 
+       WHERE session_id = $1 
+       ORDER BY id ASC`,
       [fullSessionId]
     );
 
@@ -188,11 +193,9 @@ export async function contarClientesActivos(): Promise<number> {
 
   try {
     const result = await query(
-      `
-      SELECT COUNT(*) as total
-      FROM clientes
-      WHERE activo = true AND id_negocio = $1
-      `,
+      `SELECT COUNT(*) as total
+       FROM clientes
+       WHERE activo = true AND id_negocio = $1`,
       [idNegocio]
     );
 
@@ -213,23 +216,21 @@ export async function upsertCliente(
   apellido?: string,
   edad?: number,
   alias?: string
-) {
+): Promise<Cliente> {
   const idNegocio = await getIdNegocio();
 
   try {
     const result = await query(
-      `
-      INSERT INTO clientes (numero, nombre, apellido, alias, edad, id_negocio, primer_mensaje, ultimo_mensaje, activo)
-      VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW(), true)
-      ON CONFLICT (numero, id_negocio) 
-      DO UPDATE SET 
-        nombre = EXCLUDED.nombre,
-        apellido = EXCLUDED.apellido,
-        alias = EXCLUDED.alias,
-        edad = EXCLUDED.edad,
-        ultimo_mensaje = NOW()
-      RETURNING *
-      `,
+      `INSERT INTO clientes (numero, nombre, apellido, alias, edad, id_negocio, primer_mensaje, ultimo_mensaje, activo)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW(), true)
+       ON CONFLICT (numero, id_negocio) 
+       DO UPDATE SET 
+         nombre = EXCLUDED.nombre,
+         apellido = EXCLUDED.apellido,
+         alias = EXCLUDED.alias,
+         edad = EXCLUDED.edad,
+         ultimo_mensaje = NOW()
+       RETURNING *`,
       [
         numero,
         nombre,
@@ -256,11 +257,9 @@ export async function fetchClienteById(clienteId: number): Promise<Cliente | nul
 
   try {
     const result = await query(
-      `
-      SELECT id, nombre, apellido, alias, edad, numero, primer_mensaje, ultimo_mensaje, activo, id_negocio
-      FROM clientes
-      WHERE id = $1 AND id_negocio = $2
-      `,
+      `SELECT id, nombre, apellido, alias, edad, numero, primer_mensaje, ultimo_mensaje, activo, id_negocio
+       FROM clientes
+       WHERE id = $1 AND id_negocio = $2`,
       [clienteId, idNegocio]
     );
 
@@ -280,11 +279,9 @@ export async function fetchClienteByNumero(numero: string): Promise<Cliente | nu
 
   try {
     const result = await query(
-      `
-      SELECT id, nombre, apellido, alias, edad, numero, primer_mensaje, ultimo_mensaje, activo, id_negocio
-      FROM clientes
-      WHERE numero = $1 AND id_negocio = $2
-      `,
+      `SELECT id, nombre, apellido, alias, edad, numero, primer_mensaje, ultimo_mensaje, activo, id_negocio
+       FROM clientes
+       WHERE numero = $1 AND id_negocio = $2`,
       [numero, idNegocio]
     );
 
@@ -292,5 +289,88 @@ export async function fetchClienteByNumero(numero: string): Promise<Cliente | nu
   } catch (error) {
     console.error('Error al obtener cliente por número:', error);
     throw new Error('Failed to fetch cliente by numero.');
+  }
+}
+
+// ==========================================
+// ACTUALIZAR ESTADO DEL BOT (ACTIVO)
+// ==========================================
+
+export async function toggleClienteActivo(clienteId: number): Promise<Cliente> {
+  const idNegocio = await getIdNegocio();
+
+  try {
+    const result = await query(
+      `UPDATE clientes 
+       SET activo = NOT activo
+       WHERE id = $1 AND id_negocio = $2
+       RETURNING *`,
+      [clienteId, idNegocio]
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error('Cliente no encontrado');
+    }
+
+    return result.rows[0] as Cliente;
+  } catch (error) {
+    console.error('Error al cambiar estado del cliente:', error);
+    throw new Error('Failed to toggle cliente activo.');
+  }
+}
+
+// ==========================================
+// ELIMINAR CONVERSACIÓN
+// ==========================================
+
+export async function eliminarConversacion(sessionId: string): Promise<void> {
+  const idNegocio = await getIdNegocio();
+
+  try {
+    const fullSessionId = `${sessionId}_${idNegocio}`;
+
+    await query(
+      `DELETE FROM n8n_chat_histories 
+       WHERE session_id = $1`,
+      [fullSessionId]
+    );
+  } catch (error) {
+    console.error('Error al eliminar conversación:', error);
+    throw new Error('Failed to delete conversacion.');
+  }
+}
+
+// ==========================================
+// OBTENER ESTADÍSTICAS DE MENSAJES
+// ==========================================
+
+export async function obtenerEstadisticasMensajes(): Promise<{
+  totalMensajes: number;
+  mensajesHoy: number;
+  mensajesEstaSemana: number;
+}> {
+  const idNegocio = await getIdNegocio();
+
+  try {
+    const result = await query(
+      `SELECT 
+         COUNT(*) as total_mensajes,
+         COUNT(*) FILTER (WHERE DATE(created_at) = CURRENT_DATE) as mensajes_hoy,
+         COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE - INTERVAL '7 days') as mensajes_semana
+       FROM n8n_chat_histories ch
+       INNER JOIN clientes c ON ch.session_id LIKE c.numero || '_%'
+       WHERE c.id_negocio = $1`,
+      [idNegocio]
+    );
+
+    const row = result.rows[0];
+    return {
+      totalMensajes: parseInt(row.total_mensajes || '0'),
+      mensajesHoy: parseInt(row.mensajes_hoy || '0'),
+      mensajesEstaSemana: parseInt(row.mensajes_semana || '0')
+    };
+  } catch (error) {
+    console.error('Error al obtener estadísticas de mensajes:', error);
+    throw new Error('Failed to fetch message statistics.');
   }
 }

@@ -1,8 +1,7 @@
+// app/api/conversaciones/route.ts
 import { NextResponse } from 'next/server';
 import { query } from '@/app/lib/db';
 import { getIdNegocio } from '@/app/lib/get-id-negocio';
-
-// ==========================================
 
 // ==========================================
 // GET - Obtener mensajes de un cliente
@@ -13,8 +12,8 @@ export async function GET(request: Request) {
     const idNegocio = await getIdNegocio();
     const { searchParams } = new URL(request.url);
     const numero = searchParams.get('sessionId');
-    const checkOnly = searchParams.get('checkOnly') === 'true'; // Para solo verificar si hay nuevos
-    const lastMessageId = searchParams.get('lastMessageId'); // ID del último mensaje conocido
+    const checkOnly = searchParams.get('checkOnly') === 'true';
+    const lastMessageId = searchParams.get('lastMessageId');
 
     if (!numero) {
       return NextResponse.json(
@@ -23,7 +22,7 @@ export async function GET(request: Request) {
       );
     }
 
-    // CRÍTICO: Verificar que el cliente pertenece al negocio antes de mostrar mensajes
+    // Verificar que el cliente pertenece al negocio
     const clienteCheck = await query(
       `SELECT id, nombre, apellido, activo 
        FROM clientes 
@@ -38,10 +37,9 @@ export async function GET(request: Request) {
       );
     }
 
-    // Construir el session_id correcto: numero_idNegocio
     const sessionId = `${numero}_${idNegocio}`;
 
-    // Si solo queremos verificar si hay mensajes nuevos (super ligero)
+    // Si solo queremos verificar si hay mensajes nuevos
     if (checkOnly && lastMessageId) {
       const countResult = await query(
         `SELECT COUNT(*) as nuevos, MAX(id) as ultimo_id
@@ -57,7 +55,7 @@ export async function GET(request: Request) {
       });
     }
 
-    // Obtener los últimos 50 mensajes del historial
+    // Obtener los últimos 50 mensajes
     const mensajesResult = await query(
       `SELECT 
          id,
@@ -70,7 +68,6 @@ export async function GET(request: Request) {
       [sessionId]
     );
 
-    // Invertir el orden para mostrar del más antiguo al más reciente
     const mensajes = mensajesResult.rows.reverse();
 
     return NextResponse.json({
@@ -117,7 +114,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Construir el session_id correcto con id_negocio
     const fullSessionId = `${sessionId}_${idNegocio}`;
 
     // Guardar mensaje en el historial
@@ -161,42 +157,23 @@ export async function DELETE(request: Request) {
   try {
     const idNegocio = await getIdNegocio();
     const { searchParams } = new URL(request.url);
-    const numero = searchParams.get('sessionId');
+    const sessionId = searchParams.get('sessionId');
 
-    if (!numero) {
+    if (!sessionId) {
       return NextResponse.json(
         { error: 'sessionId es requerido' },
         { status: 400 }
       );
     }
 
-    // Verificar que el cliente pertenece al negocio
-    const clienteCheck = await query(
-      `SELECT id FROM clientes WHERE numero = $1 AND id_negocio = $2`,
-      [numero, idNegocio]
+    const fullSessionId = `${sessionId}_${idNegocio}`;
+
+    await query(
+      'DELETE FROM n8n_chat_histories WHERE session_id = $1',
+      [fullSessionId]
     );
 
-    if (clienteCheck.rows.length === 0) {
-      return NextResponse.json(
-        { error: 'Cliente no encontrado o no pertenece a este negocio' },
-        { status: 404 }
-      );
-    }
-
-    // Construir el session_id correcto
-    const sessionId = `${numero}_${idNegocio}`;
-
-    // Eliminar todos los mensajes del historial
-    const deleteResult = await query(
-      `DELETE FROM n8n_chat_histories WHERE session_id = $1`,
-      [sessionId]
-    );
-
-    return NextResponse.json({ 
-      message: 'Conversación eliminada correctamente',
-      sessionId,
-      mensajesEliminados: deleteResult.rowCount
-    });
+    return NextResponse.json({ message: 'Conversación eliminada' });
   } catch (error) {
     console.error('Error al eliminar conversación:', error);
     return NextResponse.json(

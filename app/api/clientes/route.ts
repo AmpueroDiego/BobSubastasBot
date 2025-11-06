@@ -1,98 +1,76 @@
-import { query } from '@/app/lib/db';
+// app/api/conversaciones/clientes/route.ts
 import { NextResponse } from 'next/server';
-import { auth } from '@/auth';
-import { revalidateTag } from 'next/cache';
+import { queryWithRetry } from '@/app/lib/db';
+import { getIdNegocio } from '@/app/lib/get-id-negocio';
 
 // ==========================================
-// HELPER: Obtener ID del negocio
-// ==========================================
-
-async function getIdNegocio(): Promise<number> {
-  const session = await auth();
-  // @ts-ignore
-  const idNegocio = session?.user?.id_negocio;
-
-  if (!idNegocio) {
-    throw new Error('No se pudo obtener el id_negocio de la sesión');
-  }
-
-  return idNegocio;
-}
-
-// ==========================================
-// GET - Obtener todos los clientes
+// GET - Clientes con últimos mensajes (optimizado)
 // ==========================================
 
 export async function GET(request: Request) {
   try {
     const idNegocio = await getIdNegocio();
 
-    const result = await query(
-      `
+    // Query optimizada que trae clientes y últimos mensajes en una sola pasada
+    const result = await queryWithRetry(`
       SELECT 
-        id, nombre, apellido, alias, edad, numero, genero,
-        primer_mensaje, ultimo_mensaje, activo, id_negocio
-      FROM clientes 
-      WHERE id_negocio = $1 AND activo = true
-      ORDER BY ultimo_mensaje DESC NULLS LAST
-      `,
-      [idNegocio]
-    );
+        c.id,
+        c.nombre,
+        c.apellido,
+        c.alias,
+        c.edad,
+        c.numero,
+        c.primer_mensaje,
+        c.ultimo_mensaje,
+        c.activo,
+        c.id_negocio,
+        -- Último mensaje (con LIMIT 1 optimizado)
+        ch.message->>'content' as ultimo_mensaje_contenido,
+        ch.message->>'type' as ultimo_mensaje_tipo,
+        -- Contar mensajes sin leer (más eficiente con window functions)
+        COUNT(CASE WHEN ch2.message->>'type' = 'human' AND ch2.id > COALESCE(ch3.max_ai_id, 0) THEN 1 END)::integer as mensajes_sin_leer
+      
+      FROM clientes c
+      
+      -- Left join para el último mensaje
+      LEFT JOIN LATERAL (
+        SELECT message
+        FROM n8n_chat_histories
+        WHERE session_id = c.numero || '_' || c.id_negocio::text
+        ORDER BY id DESC
+        LIMIT 1
+      ) ch ON true
+      
+      -- Left join para contar sin leer
+      LEFT JOIN n8n_chat_histories ch2 ON ch2.session_id = c.numero || '_' || c.id_negocio::text
+      LEFT JOIN LATERAL (
+        SELECT MAX(id) as max_ai_id
+        FROM n8n_chat_histories
+        WHERE session_id = c.numero || '_' || c.id_negocio::text
+          AND message->>'type' = 'ai'
+      ) ch3 ON true
+      
+      WHERE c.id_negocio = $1
+      GROUP BY c.id, c.nombre, c.apellido, c.alias, c.edad, c.numero, c.primer_mensaje, 
+               c.ultimo_mensaje, c.activo, c.id_negocio, ch.message
+      ORDER BY c.activo DESC, c.ultimo_mensaje DESC NULLS LAST
+      LIMIT 100
+    `, [idNegocio]);
 
-    return NextResponse.json(result.rows);
+    return NextResponse.json(result.rows, {
+      headers: {
+        'Cache-Control': 'no-store, must-revalidate',
+        'Pragma': 'no-cache',
+      },
+    });
   } catch (error) {
-    console.error('Error al obtener clientes:', error);
+    console.error('[API] Error en GET /api/conversaciones/clientes:', error);
+    
     return NextResponse.json(
-      { error: 'Error al obtener clientes' },
-      { status: 500 }
-    );
-  }
-}
-
-// ==========================================
-// POST - Crear nuevo cliente
-// ==========================================
-
-export async function POST(request: Request) {
-  try {
-    const idNegocio = await getIdNegocio();
-    const { nombre, apellido, numero, edad, genero, alias } = await request.json();
-
-    // Validación
-    if (!nombre || !nombre.trim()) {
-      return NextResponse.json(
-        { error: 'El nombre es obligatorio' },
-        { status: 400 }
-      );
-    }
-
-    // Insertar cliente
-    const result = await query(
-      `INSERT INTO clientes (
-        nombre, apellido, numero, edad, genero, alias, 
-        id_negocio, activo, primer_mensaje, ultimo_mensaje
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, true, NOW(), NOW())
-      RETURNING id, nombre, apellido, alias, numero, edad, genero, activo`,
-      [
-        nombre.trim(),
-        apellido?.trim() || null,
-        numero?.trim() || null,
-        edad || null,
-        genero || 'otro',
-        alias?.trim() || null,
-        idNegocio
-      ]
-    );
-
-    // Revalidar caché
-    revalidateTag('clientes');
-
-    return NextResponse.json(result.rows[0], { status: 201 });
-  } catch (error) {
-    console.error('Error al crear cliente:', error);
-    return NextResponse.json(
-      { error: 'Error al crear cliente' },
+      {
+        error: 'Error al obtener clientes',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }
