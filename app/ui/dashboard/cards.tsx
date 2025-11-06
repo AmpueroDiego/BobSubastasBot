@@ -14,11 +14,7 @@ const iconMap = {
 };
 
 export default async function CardWrapper() {
-  return (
-    <div className="w-full">
-      <InteresCard />
-    </div>
-  );
+  return <InteresCard />;
 }
 
 export function Card({

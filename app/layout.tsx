@@ -1,18 +1,25 @@
-import Sidenav from '@/app/ui/dashboard/sidenav';
+import '@/app/ui/global.css';
+import { inter } from '@/app/ui/fonts';
+import { Metadata } from 'next';
 
-export default function DashboardLayout({
+export const metadata: Metadata = {
+  title: {
+    template: '%s | LuzIA Dashboard',
+    default: 'LuzIA Dashboard',
+  },
+  description: 'Sistema de gestión de citas y clientes',
+};
+
+export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidenav />
-      <main className="flex-1 overflow-auto bg-white">
-        <div className="w-full max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
-          {children}
-        </div>
-      </main>
-    </div>
+    <html lang="es">
+      <body className={`${inter.className} antialiased`}>
+        {children}
+      </body>
+    </html>
   );
 }

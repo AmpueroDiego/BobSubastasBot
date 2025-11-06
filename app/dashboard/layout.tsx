@@ -1,14 +1,25 @@
-import SideNav from '@/app/ui/dashboard/sidenav';
+import '@/app/ui/global.css';
+import { inter } from '@/app/ui/fonts';
+import { Metadata } from 'next';
 
-const Layout = ({ children }: { children: React.ReactNode }) => {
-    return (
-        <div className="flex h-screen flex-col md:flex-row md:overflow-hidden">
-            <div className="w-full flex-none md:w-64">
-                <SideNav />
-            </div>
-            <div className="flex-grow p-6 md:overflow-y-auto md:p-12">{children}</div>
-        </div>
-    );
+export const metadata: Metadata = {
+  title: {
+    template: '%s | LuzIA Dashboard',
+    default: 'LuzIA Dashboard',
+  },
+  description: 'Sistema de gestión de citas y clientes',
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="es">
+      <body className={`${inter.className} antialiased`}>
+        {children}
+      </body>
+    </html>
+  );
 }
-
-export default Layout;

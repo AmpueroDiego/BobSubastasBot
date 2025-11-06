@@ -14,8 +14,6 @@ async function getIdNegocio(): Promise<number> {
 }
 
 export async function fetchDashboardCompleto() {
-  const idNegocio = await getIdNegocio();
-  
   try {
     const result = await query(`
       WITH 
@@ -25,9 +23,7 @@ export async function fetchDashboardCompleto() {
             EXTRACT(DOW FROM c.fecha) as dia_num,
             COUNT(*) as total
           FROM citas c
-          INNER JOIN clientes cl ON c.id_cliente = cl.id
-          WHERE cl.id_negocio = $1
-            AND c.fecha >= CURRENT_DATE - INTERVAL '7 days'
+          WHERE c.fecha >= CURRENT_DATE - INTERVAL '7 days'
             AND c.fecha <= CURRENT_DATE
           GROUP BY TO_CHAR(c.fecha, 'Day'), EXTRACT(DOW FROM c.fecha)
         ),
@@ -36,43 +32,36 @@ export async function fetchDashboardCompleto() {
             EXTRACT(HOUR FROM c.hora) as hora,
             COUNT(*) as total
           FROM citas c
-          INNER JOIN clientes cl ON c.id_cliente = cl.id
-          WHERE cl.id_negocio = $1
           GROUP BY EXTRACT(HOUR FROM c.hora)
         ),
         crecimiento_clientes AS (
           SELECT 
-            TO_CHAR(DATE_TRUNC('month', primer_mensaje), 'Month YYYY') as mes,
-            DATE_TRUNC('month', primer_mensaje) as mes_fecha,
+            TO_CHAR(DATE_TRUNC('month', TO_TIMESTAMP(fecha_registro, 'DD/MM/YYYY')), 'Month YYYY') as mes,
+            DATE_TRUNC('month', TO_TIMESTAMP(fecha_registro, 'DD/MM/YYYY')) as mes_fecha,
             COUNT(*) as nuevos_clientes
-          FROM clientes
-          WHERE id_negocio = $1
-            AND primer_mensaje IS NOT NULL
-            AND primer_mensaje >= CURRENT_DATE - INTERVAL '6 months'
-          GROUP BY DATE_TRUNC('month', primer_mensaje)
+          FROM cliente
+          WHERE fecha_registro IS NOT NULL
+            AND TO_TIMESTAMP(fecha_registro, 'DD/MM/YYYY') >= CURRENT_DATE - INTERVAL '6 months'
+          GROUP BY DATE_TRUNC('month', TO_TIMESTAMP(fecha_registro, 'DD/MM/YYYY'))
         ),
         distribucion_servicios AS (
           SELECT 
-            COALESCE(s.nombre, 'Sin servicio') as servicio,
-            COUNT(c.id) as total,
-            ROUND(COUNT(c.id) * 100.0 / NULLIF(SUM(COUNT(c.id)) OVER (), 0), 1) as porcentaje
+            COALESCE(s.nombre, 'Sin servicio') as nombre,
+            COUNT(*) as total,
+            ROUND((COUNT(*) * 100.0 / NULLIF((SELECT COUNT(*) FROM citas), 0)), 1) as porcentaje
           FROM citas c
-          INNER JOIN clientes cl ON c.id_cliente = cl.id
           LEFT JOIN servicios s ON c.id_servicio = s.id
-          WHERE cl.id_negocio = $1
           GROUP BY s.nombre
+          ORDER BY total DESC
+          LIMIT 5
         ),
         clientes_frecuentes AS (
           SELECT 
-            cl.nombre,
-            cl.apellido,
-            COUNT(c.id) as total_citas,
-            COUNT(c.id) FILTER (WHERE c.asistio = true) as citas_completadas
-          FROM clientes cl
-          LEFT JOIN citas c ON cl.id = c.id_cliente
-          WHERE cl.id_negocio = $1
-          GROUP BY cl.id, cl.nombre, cl.apellido
-          HAVING COUNT(c.id) > 0
+            cl.nombre_apellido,
+            COUNT(c.id) as total_citas
+          FROM cliente cl
+          INNER JOIN citas c ON c.id_cliente = cl.id
+          GROUP BY cl.id, cl.nombre_apellido
           ORDER BY total_citas DESC
           LIMIT 10
         ),
@@ -80,20 +69,19 @@ export async function fetchDashboardCompleto() {
           SELECT 
             COUNT(*) FILTER (WHERE asistio = true) as asistieron,
             COUNT(*) FILTER (WHERE asistio = false) as no_asistieron,
-            COUNT(*) FILTER (WHERE asistio IS NULL AND fecha >= CURRENT_DATE) as pendientes,
+            COUNT(*) FILTER (WHERE asistio IS NULL) as pendientes,
             COUNT(*) as total
-          FROM citas c
-          INNER JOIN clientes cl ON c.id_cliente = cl.id
-          WHERE cl.id_negocio = $1
+          FROM citas
+          WHERE fecha <= CURRENT_DATE
         )
-      SELECT
-        (SELECT json_agg(row_to_json(citas_semana)) FROM citas_semana) as citas_semana,
-        (SELECT json_agg(row_to_json(horarios_populares) ORDER BY hora) FROM horarios_populares) as horarios_populares,
-        (SELECT json_agg(row_to_json(crecimiento_clientes) ORDER BY mes_fecha) FROM crecimiento_clientes) as crecimiento_clientes,
-        (SELECT json_agg(row_to_json(distribucion_servicios) ORDER BY total DESC) FROM distribucion_servicios) as distribucion_servicios,
-        (SELECT json_agg(row_to_json(clientes_frecuentes)) FROM clientes_frecuentes) as clientes_frecuentes,
+      SELECT 
+        (SELECT row_to_json(citas_semana) FROM citas_semana) as citas_semana,
+        (SELECT row_to_json(horarios_populares) FROM horarios_populares) as horarios_populares,
+        (SELECT row_to_json(crecimiento_clientes) FROM crecimiento_clientes) as crecimiento_clientes,
+        (SELECT row_to_json(distribucion_servicios) FROM distribucion_servicios) as distribucion_servicios,
+        (SELECT row_to_json(clientes_frecuentes) FROM clientes_frecuentes) as clientes_frecuentes,
         (SELECT row_to_json(tasa_asistencia) FROM tasa_asistencia) as tasa_asistencia
-    `, [idNegocio]);
+    `);
 
     const row = result.rows[0];
     
@@ -125,7 +113,6 @@ export async function fetchCrecimientoClientes() {
   const data = await fetchDashboardCompleto();
   return data.crecimientoClientes;
 }
-
 export async function fetchDistribucionServicios() {
   const data = await fetchDashboardCompleto();
   return data.distribucionServicios;
