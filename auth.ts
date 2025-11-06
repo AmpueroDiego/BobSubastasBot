@@ -5,42 +5,18 @@ import { z } from 'zod';
 import { query } from '@/app/lib/db';
 import bcrypt from 'bcrypt';
 
-// ==========================================
-// INTERFACES
-// ==========================================
-
 interface LoginUser {
     id: number;
-    correo: string;
-    contrasena: string;
-    ultima_vez_conectado: Date | null;
-    primera_vez_conectado: Date;
-    id_negocio: number;
+    email: string;
+    password: string;
 }
-
-interface NegocioInfo {
-    id: number;
-    nombre_negocio: string;
-    numero: string;
-    path: string;
-}
-
-// ==========================================
-// FUNCIONES DE BASE DE DATOS
-// ==========================================
 
 async function getUser(email: string): Promise<LoginUser | undefined> {
     try {
         const result = await query(
-            `SELECT 
-                l.id, 
-                l.correo, 
-                l.contrasena, 
-                l.ultima_vez_conectado, 
-                l.primera_vez_conectado, 
-                l.id_negocio
-            FROM login l
-            WHERE l.correo = $1`,
+            `SELECT id, email, password 
+             FROM login 
+             WHERE email = $1`,
             [email]
         );
         
@@ -55,34 +31,6 @@ async function getUser(email: string): Promise<LoginUser | undefined> {
     }
 }
 
-async function getNegocioById(negocioId: number): Promise<NegocioInfo | undefined> {
-    try {
-        const result = await query(
-            'SELECT id, nombre_negocio, numero, path FROM negocio WHERE id = $1',
-            [negocioId]
-        );
-        return result.rows[0];
-    } catch (error) {
-        console.error('Failed to fetch negocio:', error);
-        return undefined;
-    }
-}
-
-async function updateLastLogin(userId: number): Promise<void> {
-    try {
-        await query(
-            'UPDATE login SET ultima_vez_conectado = NOW() WHERE id = $1',
-            [userId]
-        );
-    } catch (error) {
-        console.error('Failed to update last login:', error);
-    }
-}
-
-// ==========================================
-// CONFIGURACIÓN DE NEXTAUTH
-// ==========================================
-
 export const { auth, signIn, signOut } = NextAuth({
     ...authConfig,
     providers: [
@@ -90,8 +38,8 @@ export const { auth, signIn, signOut } = NextAuth({
             async authorize(credentials) {
                 const parsedCredentials = z
                     .object({ 
-                        email: z.string().email(), 
-                        password: z.string().min(6) 
+                        email: z.string().email('Email inválido'), 
+                        password: z.string().min(1, 'Contraseña requerida')
                     })
                     .safeParse(credentials);
 
@@ -100,52 +48,27 @@ export const { auth, signIn, signOut } = NextAuth({
                     const user = await getUser(email);
                     
                     if (!user) {
-                        console.log(' User not found:', email);
+                        console.log('❌ User not found:', email);
                         return null;
                     }
 
-                    // Verificar que el usuario tenga un id_negocio asignado
-                    if (!user.id_negocio) {
-                        console.log(' Usuario sin negocio asignado:', email);
-                        return null;
-                    }
-
-                    const passwordsMatch = await bcrypt.compare(password, user.contrasena);
+                    const passwordsMatch = await bcrypt.compare(password, user.password);
                     
                     if (!passwordsMatch) {
-                        console.log(' Invalid password for:', email);
+                        console.log('❌ Invalid password for:', email);
                         return null;
                     }
 
-                    // Actualizar última vez conectado
-                    await updateLastLogin(user.id);
-                    
-                    // Obtener información del negocio
-                    const negocio = await getNegocioById(user.id_negocio);
-                    
-                    if (!negocio) {
-                        console.log(' Negocio not found for id:', user.id_negocio);
-                        return null;
-                    }
-
-                    console.log(' Login successful:', {
-                        email: user.correo,
-                        id_negocio: negocio.id,
-                        nombre_negocio: negocio.nombre_negocio
-                    });
+                    console.log('✅ Login successful:', email);
                     
                     return {
                         id: user.id.toString(),
-                        email: user.correo,
-                        name: negocio.nombre_negocio || user.correo.split('@')[0],
-                        // CRÍTICO: Guardar id_negocio en la sesión
-                        id_negocio: negocio.id,
-                        nombre_negocio: negocio.nombre_negocio,
-                        numero_negocio: negocio.numero,
+                        email: user.email,
+                        name: user.email.split('@')[0],
                     };
                 }
 
-                console.log('Invalid credentials');
+                console.log('❌ Invalid credentials');
                 return null;
             },
         }),
@@ -154,24 +77,14 @@ export const { auth, signIn, signOut } = NextAuth({
         async jwt({ token, user }) {
             if (user) {
                 token.id = user.id;
-                // @ts-ignore - Agregar campos personalizados al token
-                token.id_negocio = user.id_negocio;
-                // @ts-ignore
-                token.nombre_negocio = user.nombre_negocio;
-                // @ts-ignore
-                token.numero_negocio = user.numero_negocio;
+                token.email = user.email;
             }
             return token;
         },
         async session({ session, token }) {
             if (session.user) {
                 session.user.id = token.id as string;
-                // @ts-ignore - Agregar campos personalizados a la sesión
-                session.user.id_negocio = token.id_negocio as number;
-                // @ts-ignore
-                session.user.nombre_negocio = token.nombre_negocio as string;
-                // @ts-ignore
-                session.user.numero_negocio = token.numero_negocio as string;
+                session.user.email = token.email as string;
             }
             return session;
         },

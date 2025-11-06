@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 import CardWrapper from '@/app/ui/dashboard/cards';
-import CitasHoy from '@/app/ui/dashboard/citas-hoy';
-import ServiciosSolicitados from '@/app/ui/dashboard/servicios-solicitados';
+// import CitasHoy from '@/app/ui/dashboard/citas-hoy';
+// import ServiciosSolicitados from '@/app/ui/dashboard/servicios-solicitados';
 import { CardSkeleton } from '@/app/ui/skeletons';
 
 export const metadata = {
@@ -38,14 +38,14 @@ export default async function DashboardPage() {
         {/* Citas de hoy - 2/3 del ancho */}
         <div className="lg:col-span-2">
           <Suspense fallback={<LoadingSkeleton />}>
-            <CitasHoy />
+            {/* <CitasHoy /> */}
           </Suspense>
         </div>
 
         {/* Servicios solicitados - 1/3 del ancho */}
         <div className="lg:col-span-1">
           <Suspense fallback={<LoadingSkeleton />}>
-            <ServiciosSolicitados />
+            {/* <ServiciosSolicitados /> */}
           </Suspense>
         </div>
       </div>

@@ -1,24 +1,18 @@
-import '@/app/ui/global.css';
-import { inter } from '@/app/ui/fonts'
-import {Metadata} from "next";
+import Sidenav from '@/app/ui/dashboard/sidenav';
 
-export const metadata: Metadata = {
-  title: {
-    template: '%s | LuzIA',
-    default: 'LuzIA',
-  },
-  description: 'Un producto de Llama Solutions',
-  metadataBase: new URL('https://next-learn-dashboard.vercel.sh'),
-};
-
-export default function RootLayout({
+export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className={`${inter.className} antialiased`}>{children}</body>
-    </html>
+    <div className="flex h-screen overflow-hidden">
+      <Sidenav />
+      <main className="flex-1 overflow-auto bg-white">
+        <div className="w-full max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+          {children}
+        </div>
+      </main>
+    </div>
   );
 }

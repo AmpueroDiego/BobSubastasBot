@@ -4,7 +4,7 @@ import {
   CalendarDaysIcon,
   BriefcaseIcon,
 } from '@heroicons/react/24/outline';
-import { fetchDashboardInicioData } from '@/app/lib/data';
+import InteresCard from './interes-card';
 
 const iconMap = {
   clientes: UserGroupIcon,
@@ -14,27 +14,10 @@ const iconMap = {
 };
 
 export default async function CardWrapper() {
-  const {
-    clientesDelDia,
-    citasHoy,
-    totalServicios,              // 👈 CAMBIO: usar totalServicios en lugar de serviciosSolicitados
-    serviciosSolicitados,
-  } = await fetchDashboardInicioData();
-
-  const totalCitas = citasHoy?.length || 0;
-  // const totalServicios = serviciosSolicitados?.length || 0;  ❌ ELIMINAR ESTA LÍNEA
-
   return (
-    <>
-      <Card title="Clientes del Día" value={clientesDelDia} type="clientes" />
-      <Card title="Citas de Hoy" value={totalCitas} type="citas" />
-      <Card title="Servicios Activos" value={totalServicios} type="servicios" />
-      <Card 
-        title="Próxima Cita" 
-        value={citasHoy && citasHoy.length > 0 ? citasHoy[0].hora : '--:--'} 
-        type="horario" 
-      />
-    </>
+    <div className="w-full">
+      <InteresCard />
+    </div>
   );
 }
 

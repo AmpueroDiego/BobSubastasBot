@@ -42,7 +42,7 @@ async function getIdNegocio(): Promise<number> {
   const idNegocio = session?.user?.id_negocio;
 
   if (!idNegocio) {
-    throw new Error('No se pudo obtener el id_negocio de la sesión');
+    return 1; // Usa 1 como negocio por defecto
   }
 
   return idNegocio;
@@ -54,86 +54,41 @@ async function getIdNegocio(): Promise<number> {
 
 export const fetchDashboardInicioData = unstable_cache(
   async () => {
-    const idNegocio = await getIdNegocio();
-
     try {
       const result = await queryWithRetry(`
         SELECT 
-          -- Clientes de hoy (directo, sin vista materializada)
           COALESCE(
-            (
-              SELECT COUNT(*)::integer 
-              FROM clientes 
-              WHERE id_negocio = $1 
-              AND DATE(primer_mensaje) = CURRENT_DATE
+            json_build_object(
+              'sin_definir', COALESCE((SELECT COUNT(*) FROM cliente WHERE interes = 'sin_definir'), 0),
+              'bajo', COALESCE((SELECT COUNT(*) FROM cliente WHERE interes = 'bajo'), 0),
+              'medio', COALESCE((SELECT COUNT(*) FROM cliente WHERE interes = 'medio'), 0),
+              'alto', COALESCE((SELECT COUNT(*) FROM cliente WHERE interes = 'alto'), 0)
             ),
-            0
-          ) as clientes_del_dia,
-          
-          -- Citas de hoy (directo, sin vista materializada) ✅ CAMBIO AQUÍ
+            '{}'::json
+          ) as interes_total,
           COALESCE(
-            (
-              SELECT json_agg(
-                json_build_object(
-                  'id', c.id,
-                  'cliente_nombre', cl.nombre,
-                  'cliente_apellido', cl.apellido,
-                  'hora', TO_CHAR(c.hora, 'HH24:MI'),
-                  'servicio_nombre', COALESCE(s.nombre, 'Sin servicio'),
-                  'descripcion', COALESCE(c.descripcion, '')
-                ) ORDER BY c.hora
-              )
-              FROM citas c
-              INNER JOIN clientes cl ON c.id_cliente = cl.id
-              LEFT JOIN servicios s ON c.id_servicio = s.id
-              WHERE cl.id_negocio = $1
-              AND c.fecha = CURRENT_DATE
-              ORDER BY c.hora
+            json_build_object(
+              'sin_definir', COALESCE((SELECT COUNT(*) FROM cliente WHERE interes = 'sin_definir' AND DATE(fecha_registro) = CURRENT_DATE), 0),
+              'bajo', COALESCE((SELECT COUNT(*) FROM cliente WHERE interes = 'bajo' AND DATE(fecha_registro) = CURRENT_DATE), 0),
+              'medio', COALESCE((SELECT COUNT(*) FROM cliente WHERE interes = 'medio' AND DATE(fecha_registro) = CURRENT_DATE), 0),
+              'alto', COALESCE((SELECT COUNT(*) FROM cliente WHERE interes = 'alto' AND DATE(fecha_registro) = CURRENT_DATE), 0)
             ),
-            '[]'::json
-          ) as citas_hoy,
-          
-          -- Servicios solicitados (ya estaba bien)
-          COALESCE(
-            (
-              SELECT json_agg(
-                json_build_object(
-                  'id', servicios_ranked.id,
-                  'nombre', servicios_ranked.nombre,
-                  'total_citas', servicios_ranked.total_citas
-                ) ORDER BY servicios_ranked.total_citas DESC, servicios_ranked.nombre
-              )
-              FROM (
-                SELECT 
-                  s.id,
-                  s.nombre,
-                  COUNT(c.id) as total_citas
-                FROM servicios s
-                LEFT JOIN citas c ON c.id_servicio = s.id
-                WHERE s.id_negocio = $1
-                GROUP BY s.id, s.nombre
-                ORDER BY COUNT(c.id) DESC, s.nombre
-                LIMIT 10
-              ) servicios_ranked
-            ),
-            '[]'::json
-          ) as servicios_solicitados
-      `, [idNegocio]);
+            '{}'::json
+          ) as interes_hoy
+      `);
 
-      const row = result.rows[0] || {
-        clientes_del_dia: 0,
-        citas_hoy: [],
-        servicios_solicitados: []
-      };
+      const row = result.rows[0] || { interes_total: {}, interes_hoy: {} };
 
       return {
-        clientesDelDia: Number(row.clientes_del_dia || 0),
-        citasHoy: (row.citas_hoy || []) as CitaHoy[],
-        serviciosSolicitados: (row.servicios_solicitados || []) as ServicioSolicitado[],
+        interesTotal: row.interes_total,
+        interesHoy: row.interes_hoy,
       };
     } catch (error) {
-      console.error('[Data] Error en fetchDashboardInicioData:', error);
-      throw new Error('Failed to fetch dashboard data');
+      console.error('[Data] Error:', error);
+      return {
+        interesTotal: { sin_definir: 0, bajo: 0, medio: 0, alto: 0 },
+        interesHoy: { sin_definir: 0, bajo: 0, medio: 0, alto: 0 },
+      };
     }
   },
   ['dashboard-inicio'],
@@ -143,6 +98,7 @@ export const fetchDashboardInicioData = unstable_cache(
 // FUNCIONES INDIVIDUALES (para compatibilidad)
 // ==========================================
 
+/*
 export async function fetchClientesDelDia() {
   const data = await fetchDashboardInicioData();
   return data.clientesDelDia;
@@ -152,6 +108,7 @@ export async function fetchServiciosSolicitados() {
   const data = await fetchDashboardInicioData();
   return data.serviciosSolicitados;
 }
+*/
 
 // ==========================================
 // 🚀 CLIENTES - OPTIMIZADO CON VISTA
@@ -179,7 +136,7 @@ export const fetchClientes = unstable_cache(
           citas_no_asistidas,
           citas_pendientes
         FROM mv_clientes_resumen
-        WHERE id_negocio = $1
+        WHERE 1=1  -- Sin filtro de negocio
         ORDER BY ultimo_mensaje DESC NULLS LAST
         `,
         [idNegocio]
@@ -264,7 +221,7 @@ export const fetchFilteredClientes = unstable_cache(
           ultimo_mensaje,
           activo
         FROM mv_clientes_resumen
-        WHERE id_negocio = $1
+        WHERE 1=1  -- Sin filtro de negocio
           AND (
             LOWER(nombre) LIKE LOWER($2) OR 
             LOWER(apellido) LIKE LOWER($2) OR 
@@ -337,7 +294,7 @@ export const fetchServicios = unstable_cache(
         `
         SELECT id, nombre, descripcion
         FROM servicios
-        WHERE id_negocio = $1
+        WHERE 1=1  -- Sin filtro de negocio
         ORDER BY nombre
         `,
         [idNegocio]
@@ -421,40 +378,35 @@ export async function fetchCitasAgrupadas(searchQuery: string = '') {
 // CITAS INDIVIDUALES - OPTIMIZADO SIN PAGINACIÓN
 // ==========================================
 
-export async function fetchCitasHoy() {
-  const idNegocio = await getIdNegocio();
+// export async function fetchCitasHoy() {
+//   try {
+//     const result = await queryWithRetry(
+//       `
+//       SELECT 
+//         c.id,
+//         cl.nombre as cliente_nombre,
+//         cl.apellido as cliente_apellido,
+//         TO_CHAR(c.hora, 'HH24:MI') as hora,
+//         s.nombre as servicio_nombre,
+//         c.descripcion,
+//         c.asistio,
+//         c.fecha
+//       FROM citas c
+//       INNER JOIN clientes cl ON c.id_cliente = cl.id
+//       LEFT JOIN servicios s ON c.id_servicio = s.id
+//       WHERE DATE(c.fecha) = CURRENT_DATE
+//         AND c.asistio IS NULL
+//       ORDER BY c.hora
+//       LIMIT 50
+//       `
+//     );
 
-  try {
-    const result = await queryWithRetry(
-      `
-      SELECT 
-        c.id,
-        cl.nombre as cliente_nombre,
-        cl.apellido as cliente_apellido,
-        TO_CHAR(c.hora, 'HH24:MI') as hora,
-        s.nombre as servicio_nombre,
-        c.descripcion,
-        c.asistio,
-        c.fecha
-      FROM citas c
-      INNER JOIN clientes cl ON c.id_cliente = cl.id
-      LEFT JOIN servicios s ON c.id_servicio = s.id
-      WHERE DATE(c.fecha) = CURRENT_DATE
-        AND cl.id_negocio = $1
-        AND c.asistio IS NULL
-      ORDER BY c.hora
-      LIMIT 50
-      `,
-      [idNegocio]
-    );
-
-    return result.rows;
-  } catch (error) {
-    console.error('[Data] Error en fetchCitasHoy:', error);
-    throw new Error('Failed to fetch citas hoy');
-  }
-}
-
+//     return result.rows;
+//   } catch (error) {
+//     console.error('[Data] Error en fetchCitasHoy:', error);
+//     return []; // Retorna array vacío si hay error
+//   }
+// }
 
 // En app/lib/data.ts
 export async function fetchCitasFuturas(searchQuery: string = '') {
