@@ -20,6 +20,7 @@ export async function GET(request: Request) {
         c.ultimo_mensaje,
         c.estado as activo,
         c.score1,
+        c.emocion,
         -- Último mensaje del historial
         ch.message->>'content' as ultimo_mensaje_contenido,
         ch.message->>'type' as ultimo_mensaje_tipo,
@@ -69,11 +70,13 @@ export async function GET(request: Request) {
       activo: row.activo === 'activo' || row.activo === true,
       id_negocio: null,
       score1: row.score1,
+      emocion: row.emocion,  // ← AGREGAR ESTA LÍNEA
       ultimo_mensaje_contenido: row.ultimo_mensaje_contenido,
       ultimo_mensaje_tipo: row.ultimo_mensaje_tipo,
       mensajes_sin_leer: row.mensajes_sin_leer || 0
     }));
-
+    
+    
     return NextResponse.json(clientesFormateados, {
       headers: {
         'Cache-Control': 'no-store, must-revalidate',

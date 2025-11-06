@@ -5,6 +5,8 @@ import { MagnifyingGlassIcon, ArrowPathIcon } from '@heroicons/react/24/outline'
 import { getNombreAMostrar } from '@/app/lib/utils';
 import { ClienteConUltimoMensaje } from '@/app/lib/chat-data';
 import { useState } from 'react';
+import { useUmbrales } from '@/app/hooks/useUmbrales';
+
 
 interface Props {
   clientes: ClienteConUltimoMensaje[];
@@ -74,7 +76,11 @@ function truncarMensaje(mensaje: string | null | undefined, maxLength: number = 
 }
 
 // Función para obtener el color y nivel de intención de compra
-function getIntencionCompra(score1: number | null | undefined): {
+function getIntencionCompra(
+  score1: number | null | undefined,
+  umbral_bajo: number,
+  umbral_alto: number
+): {
   nivel: string;
   color: string;
   bgColor: string;
@@ -82,14 +88,14 @@ function getIntencionCompra(score1: number | null | undefined): {
 } {
   const score = score1 ?? 0;
   
-  if (score >= 60) {
+  if (score >= umbral_alto) {
     return {
       nivel: 'Alto',
       color: 'bg-green-500',
       bgColor: 'bg-green-50',
       textColor: 'text-green-700'
     };
-  } else if (score >= 30) {
+  } else if (score >= umbral_bajo) {
     return {
       nivel: 'Medio',
       color: 'bg-yellow-500',
@@ -115,6 +121,7 @@ export default function ClientesSidebar({
   onRefresh
 }: Props) {
   const [refreshing, setRefreshing] = useState(false);
+  const { umbrales } = useUmbrales(); // ← AGREGAR ESTA LÍNEA
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -183,7 +190,8 @@ export default function ClientesSidebar({
               const numeroMostrar = formatearNumeroParaMostrar(cliente.numero);
               const isSelected = cliente.numero === selectedClient;
               const tieneNuevosMensajes = (cliente.mensajes_sin_leer ?? 0) > 0;
-              const intencion = getIntencionCompra(cliente.score1);
+              const intencion = getIntencionCompra(cliente.score1, umbrales.umbral_bajo, umbrales.umbral_alto);
+
 
               return (
                 <button

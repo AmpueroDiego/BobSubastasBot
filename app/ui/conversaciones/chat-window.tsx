@@ -4,7 +4,29 @@
 import { useState, useEffect, useRef } from 'react';
 import { getNombreAMostrar } from '@/app/lib/utils';
 import { ArrowPathIcon, PowerIcon, PaperAirplaneIcon } from '@heroicons/react/24/outline';
-
+// Agregar esta función al inicio del archivo (después de las otras funciones helper)
+function getEmojiEmocion(emocion: string | null): string {
+  switch (emocion) {
+    case 'EM_SATISFACCION':
+      return '😊';
+    case 'EM_NEUTRO':
+      return '😐';
+    case 'EM_DUDA':
+      return '🤔';
+    case 'EM_MOLESTIA':
+      return '😠';
+    case 'EM_ENTUSIASMO':  // ← AGREGAR ESTE
+      return '🤩';
+    case 'EM_FELICIDAD':   // ← POR SI HAY MÁS
+      return '😄';
+    case 'EM_TRISTEZA':
+      return '😢';
+    case 'EM_PREOCUPACION':
+      return '😟';
+    default:
+      return '❓'; // ← Cambiar de '' a '❓' para debug
+  }
+}
 interface Mensaje {
   id: string | number;
   type: 'human' | 'ai';
@@ -19,6 +41,8 @@ interface Cliente {
   alias: string | null;
   numero: string | null;
   activo: boolean;
+    emocion: string | null; // ← AGREGAR ESTA LÍNEA
+
 }
 
 interface Props {
@@ -278,14 +302,26 @@ const numeroMostrar = cliente ? formatearNumeroParaMostrar(cliente.numero) : '';
       {/* Header del chat */}
       <div className="bg-white border-b border-gray-200 p-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-semibold">
-            {nombreMostrar.charAt(0).toUpperCase()}
-          </div>
-          <div>
-            <h3 className="font-semibold text-gray-900">{nombreMostrar}</h3>
-            <p className="text-sm text-gray-500">+51 {numeroMostrar}</p>
-          </div>
-        </div>
+  <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-semibold">
+    {nombreMostrar.charAt(0).toUpperCase()}
+  </div>
+  <div>
+    <h3 className="font-semibold text-gray-900">{nombreMostrar}</h3>
+    <p className="text-sm text-gray-500">+51 {numeroMostrar}</p>
+  </div>
+  {/* EMOJI DE EMOCIÓN - AHORA ESTÁ FUERA */}
+  {/* EMOJI DE EMOCIÓN CON TEXTO */}
+{cliente?.emocion && (
+  <div className="flex items-center gap-2 ml-2">
+    <span className="text-2xl" title={cliente.emocion}>
+      {getEmojiEmocion(cliente.emocion)}
+    </span>
+    <span className="text-xs font-medium text-gray-600 bg-gray-100 px-2 py-1 rounded">
+      {cliente.emocion.replace('EM_', '')}
+    </span>
+  </div>
+)}
+</div>
 
         <div className="flex items-center gap-2">
           {/* Botón de refrescar */}
