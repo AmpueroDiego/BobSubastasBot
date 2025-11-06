@@ -54,8 +54,8 @@ function limpiarContenidoMensaje(content: string): string {
     let limpio = content.split('Analiza el mensaje y:')[0];
     limpio = limpio.replace('Mensaje del cliente:', '').trim();
     
-    if (limpio.includes('Número de teléfono:')) {
-      limpio = limpio.split('Número de teléfono:')[0].trim();
+    if (limpio.includes('NÃºmero de telÃ©fono:')) {
+      limpio = limpio.split('NÃºmero de telÃ©fono:')[0].trim();
     }
     
     if (limpio.includes('Fecha y hora actual:')) {
@@ -100,7 +100,12 @@ export default function ChatWindow({ clienteNumero, clientes }: Props) {
   }, [mensajes]);
 
   const cargarMensajes = async (mostrarCarga = true) => {
-    if (!clienteNumero) {
+    console.log('🔄 cargarMensajes llamado con clienteNumero:', clienteNumero);
+    console.log('   tipo:', typeof clienteNumero);
+    console.log('   length:', clienteNumero?.length);
+    
+    if (!clienteNumero || clienteNumero === '') {
+      console.log('❌ clienteNumero está vacío, no se cargarán mensajes');
       setMensajes([]);
       return;
     }
@@ -108,22 +113,47 @@ export default function ChatWindow({ clienteNumero, clientes }: Props) {
     if (mostrarCarga) setCargando(true);
 
     try {
-      const response = await fetch(
-        `/api/conversaciones/mensajes?sessionId=${encodeURIComponent(clienteNumero)}&limit=100`
-      );
+      const url = `/api/conversaciones/mensajes?session_id=${encodeURIComponent(clienteNumero)}`;
+      console.log('📡 Haciendo fetch a:', url);
+      console.log('   clienteNumero codificado:', encodeURIComponent(clienteNumero));
       
+      const response = await fetch(url);
+      
+      console.log('📬 Respuesta recibida:', {
+        status: response.status,
+        ok: response.ok,
+        statusText: response.statusText
+      });
+
       if (response.ok) {
         const data = await response.json();
-        const mensajesFormateados = data.data.map((msg: any) => ({
-          id: msg.id,
-          type: msg.type,
-          content: limpiarContenidoMensaje(msg.content),
-          timestamp: msg.timestamp
-        }));
-        setMensajes(mensajesFormateados);
+        console.log('✅ Datos recibidos del servidor:', data);
+        
+        if (data.mensajes && Array.isArray(data.mensajes)) {
+          const mensajesFormateados = data.mensajes.map((msg: any) => ({
+            id: msg.id,
+            type: msg.tipo === 'recibido' ? 'human' : 'ai',
+            content: msg.texto || '',
+            timestamp: msg.created_at ? new Date(msg.created_at).getTime() / 1000 : undefined
+          }));
+          
+          console.log('✅ Mensajes formateados:', mensajesFormateados.length);
+          setMensajes(mensajesFormateados);
+        } else {
+          console.warn('⚠️ Estructura de datos inesperada:', data);
+          setMensajes([]);
+        }
+      } else {
+        const errorText = await response.text();
+        console.error('❌ Error del servidor:', {
+          status: response.status,
+          error: errorText
+        });
+        setMensajes([]);
       }
     } catch (error) {
-      console.error('Error al cargar mensajes:', error);
+      console.error('❌ Error al cargar mensajes:', error);
+      setMensajes([]);
     } finally {
       if (mostrarCarga) setCargando(false);
     }
@@ -186,6 +216,7 @@ export default function ChatWindow({ clienteNumero, clientes }: Props) {
   };
 
   useEffect(() => {
+    console.log('🎯 useEffect disparado - clienteNumero cambió a:', clienteNumero);
     cargarMensajes();
   }, [clienteNumero]);
 
@@ -236,13 +267,12 @@ export default function ChatWindow({ clienteNumero, clientes }: Props) {
   }
 
   const nombreMostrar = cliente ? getNombreAMostrar(
-    cliente.nombre,
-    cliente.apellido,
-    cliente.alias,
-    cliente.numero
-  ) : 'Cliente';
-  const numeroMostrar = cliente ? formatearNumeroParaMostrar(cliente.numero) : '';
-
+  cliente.nombre,
+  cliente.apellido,
+  cliente.alias,
+  cliente.numero
+) : 'Cliente';
+const numeroMostrar = cliente ? formatearNumeroParaMostrar(cliente.numero) : '';
   return (
     <div className="h-full flex flex-col bg-gray-50">
       {/* Header del chat */}

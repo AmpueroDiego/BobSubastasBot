@@ -1,3 +1,4 @@
+// app/ui/conversaciones/conversaciones-list.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -19,9 +20,23 @@ export default function ConversacionesList({
   const [clientes, setClientes] = useState<ClienteConUltimoMensaje[]>(clientesIniciales);
   const [selectedClient, setSelectedClient] = useState(clienteSeleccionado);
   const [searchTerm, setSearchTerm] = useState('');
-  const [sidebarOpen, setSidebarOpen] = useState(false); // Para mobile
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Actualizar cada 60 segundos si la pestaña está visible
+  // 🔥 NUEVO: Auto-seleccionar el primer cliente si no hay ninguno seleccionado
+  useEffect(() => {
+    console.log('🔍 Verificando clientes:', {
+      total: clientes.length,
+      selectedClient,
+      primerCliente: clientes[0]?.numero
+    });
+
+    if (!selectedClient && clientes.length > 0 && clientes[0].numero) {
+      console.log('✅ Auto-seleccionando primer cliente:', clientes[0].numero);
+      setSelectedClient(clientes[0].numero);
+    }
+  }, [clientes, selectedClient]);
+
+  // Actualizar cada 30 segundos
   useEffect(() => {
     let interval: NodeJS.Timeout;
 
@@ -32,6 +47,7 @@ export default function ConversacionesList({
         const response = await fetch('/api/conversaciones/clientes');
         if (response.ok) {
           const data = await response.json();
+          console.log('🔄 Clientes actualizados:', data.length);
           setClientes(data);
         }
       } catch (error) {
@@ -39,7 +55,7 @@ export default function ConversacionesList({
       }
     };
 
-    interval = setInterval(actualizarClientes, 60000);
+    interval = setInterval(actualizarClientes, 30000);
 
     const handleVisibilityChange = () => {
       if (!document.hidden) {
@@ -55,12 +71,12 @@ export default function ConversacionesList({
     };
   }, []);
 
-  // Función para refrescar manualmente
   const refrescarClientes = async () => {
     try {
       const response = await fetch('/api/conversaciones/clientes');
       if (response.ok) {
         const data = await response.json();
+        console.log('🔄 Clientes refrescados:', data.length);
         setClientes(data);
       }
     } catch (error) {
@@ -68,13 +84,12 @@ export default function ConversacionesList({
     }
   };
 
-  // Manejar selección de cliente (cerrar sidebar en mobile)
   const handleSelectClient = (numero: string) => {
+    console.log('👆 Cliente seleccionado:', numero);
     setSelectedClient(numero);
-    setSidebarOpen(false); // Cerrar sidebar en mobile después de seleccionar
+    setSidebarOpen(false);
   };
 
-  // Filtrar clientes por búsqueda
   const clientesFiltrados = clientes.filter(cliente => {
     const nombreAMostrar = getNombreAMostrar(
       cliente.nombre,
@@ -89,10 +104,10 @@ export default function ConversacionesList({
 
   return (
     <div className="flex h-[calc(100vh-12rem)] bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden relative">
-      {/* Botón hamburguesa para mobile - POSICIÓN DERECHA */}
+      {/* Botón hamburguesa para mobile */}
       <button
         onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="md:hidden absolute top-4 right-4 z-50 p-2 bg-blue-500 text-white rounded-lg shadow-lg"
+        className="md:hidden absolute top-4 right-4 z-50 p-2 bg-blue-500 text-white rounded-lg shadow-lg hover:bg-blue-600 transition-colors"
       >
         {sidebarOpen ? (
           <XMarkIcon className="h-6 w-6" />
@@ -109,7 +124,7 @@ export default function ConversacionesList({
         />
       )}
 
-      {/* Sidebar de clientes - Responsive */}
+      {/* Sidebar de clientes */}
       <div
         className={`
           fixed md:relative
@@ -122,7 +137,7 @@ export default function ConversacionesList({
         `}
       >
         <ClientesSidebar
-          clientes={clientesFiltrados}
+          clientes={clientesFiltrados as any}
           selectedClient={selectedClient || ''}
           onSelectClient={handleSelectClient}
           searchTerm={searchTerm}
@@ -131,11 +146,11 @@ export default function ConversacionesList({
         />
       </div>
 
-      {/* Ventana de chat - Responsive */}
+      {/* Ventana de chat */}
       <div className="flex-1 w-full md:w-auto">
         <ChatWindow
           clienteNumero={selectedClient || ''}
-          clientes={clientes}
+          clientes={clientes as any}
         />
       </div>
     </div>
