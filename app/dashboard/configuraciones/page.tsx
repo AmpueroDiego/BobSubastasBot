@@ -18,6 +18,11 @@ interface Negocio {
   logo_imagen: string;
 }
 
+interface Umbrales {
+  umbral_bajo: number;
+  umbral_alto: number;
+}
+
 export default function ConfiguracionesPage() {
   const [botActivo, setBotActivo] = useState(true);
   const [horarios, setHorarios] = useState<Horario[]>([]);
@@ -26,11 +31,15 @@ export default function ConfiguracionesPage() {
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [umbrales, setUmbrales] = useState<Umbrales>({ umbral_bajo: 30, umbral_alto: 70 });
+  const [savingUmbrales, setSavingUmbrales] = useState(false);
+  const [mensajeUmbrales, setMensajeUmbrales] = useState<string | null>(null);
 
   const [seccionesAbiertas, setSeccionesAbiertas] = useState({
     logo: false,
     bot: true,
-    horarios: true
+    horarios: true,
+    umbrales: true
   });
 
   useEffect(() => {
@@ -41,10 +50,11 @@ export default function ConfiguracionesPage() {
     try {
       setLoading(true);
 
-      const [negocioRes, horariosRes, clientesRes] = await Promise.all([
+      const [negocioRes, horariosRes, clientesRes, umbralesRes] = await Promise.all([
         fetch('/api/negocio'),
         fetch('/api/horarios'),
-        fetch('/api/clientes/estado')
+        fetch('/api/clientes/estado'),
+        fetch('/api/configuraciones')
       ]);
 
       if (negocioRes.ok) {
@@ -64,6 +74,11 @@ export default function ConfiguracionesPage() {
       if (clientesRes.ok) {
         const clientesData = await clientesRes.json();
         setBotActivo(clientesData.algunoActivo);
+      }
+
+      if (umbralesRes.ok) {
+        const umbralesData = await umbralesRes.json();
+        setUmbrales(umbralesData);
       }
     } catch (error) {
       console.error('Error al cargar datos:', error);
@@ -173,6 +188,39 @@ export default function ConfiguracionesPage() {
       }
     } catch (error) {
       console.error('Error al actualizar horario:', error);
+    }
+  };
+
+  const guardarUmbrales = async () => {
+    if (umbrales.umbral_bajo >= umbrales.umbral_alto) {
+      setMensajeUmbrales('El umbral bajo debe ser menor que el umbral alto');
+      setTimeout(() => setMensajeUmbrales(null), 3000);
+      return;
+    }
+
+    setSavingUmbrales(true);
+    setMensajeUmbrales(null);
+
+    try {
+      const response = await fetch('/api/configuraciones', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(umbrales),
+      });
+
+      if (response.ok) {
+        setMensajeUmbrales('✓ Umbrales guardados correctamente');
+        setTimeout(() => setMensajeUmbrales(null), 3000);
+      } else {
+        setMensajeUmbrales('Error al guardar umbrales');
+        setTimeout(() => setMensajeUmbrales(null), 3000);
+      }
+    } catch (error) {
+      console.error('Error al guardar umbrales:', error);
+      setMensajeUmbrales('Error al conectar con el servidor');
+      setTimeout(() => setMensajeUmbrales(null), 3000);
+    } finally {
+      setSavingUmbrales(false);
     }
   };
 
@@ -382,6 +430,172 @@ export default function ConfiguracionesPage() {
             <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <p className="text-sm text-blue-800">
                 <strong>Nota:</strong> Activa los días y define tus horarios de atención. Los días inactivos no permitirán agendar citas.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Umbrales de Clasificación */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <button
+          onClick={() => toggleSeccion('umbrales')}
+          className="w-full flex items-center justify-between p-6 hover:bg-gray-50 transition-colors"
+        >
+          <h2 className="text-xl font-semibold">Umbrales de Clasificación de Leads</h2>
+          {seccionesAbiertas.umbrales ? (
+            <ChevronUpIcon className="w-5 h-5 text-gray-500" />
+          ) : (
+            <ChevronDownIcon className="w-5 h-5 text-gray-500" />
+          )}
+        </button>
+
+        {seccionesAbiertas.umbrales && (
+          <div className="p-6 border-t border-gray-200">
+            {mensajeUmbrales && (
+              <div className={`mb-4 p-3 rounded-lg ${
+                mensajeUmbrales.includes('✓') 
+                  ? 'bg-green-50 border border-green-200 text-green-800' 
+                  : 'bg-red-50 border border-red-200 text-red-800'
+              }`}>
+                {mensajeUmbrales}
+              </div>
+            )}
+
+            {/* Slider Umbral Bajo */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-sm font-semibold text-gray-900">
+                  🔴 Umbral Bajo
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl font-bold text-red-600">
+                    {umbrales.umbral_bajo}
+                  </span>
+                  <span className="text-sm text-gray-500">pts</span>
+                </div>
+              </div>
+              
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={umbrales.umbral_bajo}
+                onChange={(e) => setUmbrales({ ...umbrales, umbral_bajo: parseInt(e.target.value) })}
+                className="w-full h-2 bg-red-200 rounded-lg appearance-none cursor-pointer accent-red-600"
+              />
+              
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>0</span>
+                <span>50</span>
+                <span>100</span>
+              </div>
+
+              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-800">
+                  Leads con puntuación <strong>menor a {umbrales.umbral_bajo}</strong> = <strong>Interés Bajo</strong>
+                </p>
+              </div>
+            </div>
+
+            {/* Slider Umbral Alto */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-sm font-semibold text-gray-900">
+                  🟢 Umbral Alto
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl font-bold text-green-600">
+                    {umbrales.umbral_alto}
+                  </span>
+                  <span className="text-sm text-gray-500">pts</span>
+                </div>
+              </div>
+              
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={umbrales.umbral_alto}
+                onChange={(e) => setUmbrales({ ...umbrales, umbral_alto: parseInt(e.target.value) })}
+                className="w-full h-2 bg-green-200 rounded-lg appearance-none cursor-pointer accent-green-600"
+              />
+              
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>0</span>
+                <span>50</span>
+                <span>100</span>
+              </div>
+
+              <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-sm text-green-800">
+                  Leads con puntuación <strong>mayor o igual a {umbrales.umbral_alto}</strong> = <strong>Interés Alto</strong>
+                </p>
+              </div>
+            </div>
+
+            {/* Resumen de rangos */}
+            <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 mb-4">
+              <h3 className="font-semibold text-gray-900 mb-3 text-sm">📊 Resumen de Clasificación</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="bg-white rounded-lg p-3 border-l-4 border-red-500">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                    <span className="text-xs font-semibold text-red-700">Bajo</span>
+                  </div>
+                  <p className="text-lg font-bold text-red-600">
+                    0 - {umbrales.umbral_bajo - 1}
+                  </p>
+                </div>
+
+                <div className="bg-white rounded-lg p-3 border-l-4 border-yellow-500">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                    <span className="text-xs font-semibold text-yellow-700">Medio</span>
+                  </div>
+                  <p className="text-lg font-bold text-yellow-600">
+                    {umbrales.umbral_bajo} - {umbrales.umbral_alto - 1}
+                  </p>
+                </div>
+
+                <div className="bg-white rounded-lg p-3 border-l-4 border-green-500">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    <span className="text-xs font-semibold text-green-700">Alto</span>
+                  </div>
+                  <p className="text-lg font-bold text-green-600">
+                    {umbrales.umbral_alto} - 100
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Botones */}
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setUmbrales({ umbral_bajo: 30, umbral_alto: 70 })}
+                className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium transition-colors"
+              >
+                Restablecer
+              </button>
+
+              <button
+                onClick={guardarUmbrales}
+                disabled={savingUmbrales || umbrales.umbral_bajo >= umbrales.umbral_alto}
+                className={`px-6 py-2 rounded-lg font-semibold text-white transition-colors ${
+                  savingUmbrales || umbrales.umbral_bajo >= umbrales.umbral_alto
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+              >
+                {savingUmbrales ? 'Guardando...' : '💾 Guardar Umbrales'}
+              </button>
+            </div>
+
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800">
+                <strong>Nota:</strong> Estos umbrales se aplican automáticamente en conversaciones y dashboard para clasificar leads.
               </p>
             </div>
           </div>
