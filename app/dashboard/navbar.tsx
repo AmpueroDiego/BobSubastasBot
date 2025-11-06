@@ -17,8 +17,8 @@ import { usePathname } from 'next/navigation';
 const navLinks = [
   { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
   { name: 'Conversaciones', href: '/dashboard/conversaciones', icon: ChatBubbleLeftRightIcon },
-  { name: 'Clientes', href: '/dashboard/clientes', icon: UserGroupIcon },
-  { name: 'Citas', href: '/dashboard/citas', icon: CalendarDaysIcon },
+ // { name: 'Clientes', href: '/dashboard/clientes', icon: UserGroupIcon },
+  //{ name: 'Citas', href: '/dashboard/citas', icon: CalendarDaysIcon },
   { name: 'Configuración', href: '/dashboard/configuraciones', icon: CogIcon }
 ];
 

@@ -3,8 +3,8 @@
 import { lusitana } from "@/app/ui/fonts";
 import React, { Suspense } from "react";
 import CardWrapper from "@/app/ui/dashboard/cards";
-import CitasHoy from "@/app/ui/dashboard/citas-hoy";
-import ServiciosSolicitados from "@/app/ui/dashboard/servicios-solicitados";
+//import CitasHoy from "@/app/ui/dashboard/citas-hoy";
+//import ServiciosSolicitados from "@/app/ui/dashboard/servicios-solicitados";
 import EstadisticasAsistencia from "@/app/ui/dashboard/estadisticas-asistencia";
 import CitasSemanaChart from "@/app/ui/dashboard/citas-semana-chart";
 import HorariosPopulares from "@/app/ui/dashboard/horarios-populares";
@@ -57,7 +57,7 @@ export default async function Page() {
 
 
         <Suspense fallback={<SectionSkeleton />}>
-          <ServiciosSolicitados />
+       //   <ServiciosSolicitados />
         </Suspense>
       </div>
 
@@ -82,9 +82,9 @@ export default async function Page() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-1">
-        <Suspense fallback={<SectionSkeleton />}>
-          <CitasHoy />
-        </Suspense>
+   //     <Suspense fallback={<SectionSkeleton />}>
+    //      <CitasHoy />
+     //   </Suspense>
       </div>
     </main>
   );
