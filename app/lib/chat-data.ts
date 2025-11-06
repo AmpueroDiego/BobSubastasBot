@@ -270,6 +270,12 @@ export async function fetchClienteById(clienteId: number): Promise<Cliente | nul
   }
 }
 
+export interface ClienteConUltimoMensaje extends Cliente {
+  ultimo_mensaje_contenido?: string | null;
+  ultimo_mensaje_tipo?: 'human' | 'ai' | null;
+  mensajes_sin_leer?: number;
+  score1?: number | null; // Intención de compra (0-100)
+}
 // ==========================================
 // OBTENER CLIENTE POR NÚMERO
 // ==========================================
